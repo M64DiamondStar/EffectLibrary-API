@@ -1,0 +1,6 @@
+ktor:
+    application:
+        modules:
+            - me.m64diamondstar.ApplicationKt.module
+    deployment:
+        port: 8080
