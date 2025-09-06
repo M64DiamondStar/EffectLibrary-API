@@ -2,7 +2,9 @@ package me.m64diamondstar.db
 
 import io.ktor.http.*
 import me.m64diamondstar.security.ApiKeyUtil
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.batchInsert
+import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.javatime.CurrentDateTime
 import org.jetbrains.exposed.sql.update
 import java.time.LocalDateTime
@@ -216,6 +218,25 @@ suspend fun createAsset(
 }
 
 /**
+ * Deletes an asset from the database by its ID.
+ *
+ * Workflow:
+ * - Looks up the asset using [AssetDAO].
+ * - If the asset exists, deletes it along with all related entries in `asset_tags`
+ *   due to the ON DELETE CASCADE foreign key.
+ * - Returns an appropriate HTTP status code.
+ *
+ * @param id The ID of the asset to delete.
+ * @return [HttpStatusCode.OK] if the asset was successfully deleted,
+ *         [HttpStatusCode.NotFound] if no asset with the given ID exists.
+ */
+suspend fun deleteAsset(id: Int): HttpStatusCode = suspendTransaction {
+    val asset = AssetDAO.findById(id) ?: return@suspendTransaction HttpStatusCode.NotFound
+    asset.delete()
+    HttpStatusCode.OK
+}
+
+/**
  * Approves an asset (effect/show) by setting its `approved` field to true.
  *
  * Workflow:
@@ -226,7 +247,7 @@ suspend fun createAsset(
  * @param id The ID of the asset to approve.
  * @return `true` if the asset was successfully approved; `false` if it was already approved or not found.
  */
-suspend fun approveEffect(id: Int, approvedBy: String?): HttpStatusCode = suspendTransaction {
+suspend fun approveAsset(id: Int, approvedBy: String?): HttpStatusCode = suspendTransaction {
     val entry = AssetDAO.findById(id) ?: return@suspendTransaction HttpStatusCode.NotFound
     if(entry.approved) return@suspendTransaction HttpStatusCode.NotModified // Entry has already been approved
     AssetsTable.update({ AssetsTable.id eq id}) {
@@ -234,6 +255,55 @@ suspend fun approveEffect(id: Int, approvedBy: String?): HttpStatusCode = suspen
         it[this.approvedBy] = approvedBy
         it[this.updatedAt] = CurrentDateTime
     }
+    HttpStatusCode.OK
+}
+
+suspend fun updateMaterial(id: Int, material: String): HttpStatusCode = suspendTransaction {
+    val entry = AssetDAO.findById(id) ?: return@suspendTransaction HttpStatusCode.NotFound
+    if(entry.approved) return@suspendTransaction HttpStatusCode.NotModified // Entry has already been approved
+    AssetsTable.update({ AssetsTable.id eq id}) {
+        it[this.material] = material
+        it[this.updatedAt] = CurrentDateTime
+    }
+    HttpStatusCode.OK
+}
+
+suspend fun updatePasteLink(id: Int, pasteLink: String): HttpStatusCode = suspendTransaction {
+    val entry = AssetDAO.findById(id) ?: return@suspendTransaction HttpStatusCode.NotFound
+    if(entry.approved) return@suspendTransaction HttpStatusCode.NotModified // Entry has already been approved
+    AssetsTable.update({ AssetsTable.id eq id}) {
+        it[this.pasteLink] = pasteLink
+        it[this.updatedAt] = CurrentDateTime
+    }
+    HttpStatusCode.OK
+}
+
+/**
+ * Updates the tags associated with an asset.
+ *
+ * Workflow:
+ * - Removes all existing tag associations for the given asset ID.
+ * - Inserts the new list of tag IDs using batchInsert with conflict ignore.
+ *
+ * @param id The ID of the asset to update.
+ * @param tags A list of tag IDs to associate with the asset.
+ * @return [HttpStatusCode.OK] if updated successfully, [HttpStatusCode.NotFound] if the asset does not exist.
+ */
+suspend fun updateTags(id: Int, tags: List<Int>): HttpStatusCode = suspendTransaction {
+    val asset = AssetDAO.findById(id) ?: return@suspendTransaction HttpStatusCode.NotFound
+
+    // Delete existing associations
+    AssetTagsTable.deleteWhere { AssetTagsTable.assetId eq id }
+
+    // Filter valid tag IDs
+    val validTags = tags.mapNotNull { TagDAO.findById(it)?.id?.value }
+
+    // Batch insert new tag associations with conflict ignore
+    AssetTagsTable.batchInsert(validTags, ignore = true) { tagId ->
+        this[AssetTagsTable.assetId] = id
+        this[AssetTagsTable.tagId] = tagId
+    }
+
     HttpStatusCode.OK
 }
 

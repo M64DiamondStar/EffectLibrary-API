@@ -1,19 +1,19 @@
 package me.m64diamondstar.routes
 
-import io.ktor.http.HttpStatusCode
+import io.ktor.http.*
 import io.ktor.server.auth.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.serialization.Serializable
-import me.m64diamondstar.db.approveEffect
+import me.m64diamondstar.db.approveAsset
+import me.m64diamondstar.db.updatePasteLink
+import me.m64diamondstar.db.updateMaterial
 import me.m64diamondstar.db.createAsset
-import me.m64diamondstar.db.services.filterAssetsByTags
-import me.m64diamondstar.db.services.getAllProvidedAssets
-import me.m64diamondstar.db.services.getAssetById
-import me.m64diamondstar.db.services.getLatestAssets
-import me.m64diamondstar.db.services.getRawData
-import me.m64diamondstar.db.services.searchAssetsByName
+import me.m64diamondstar.db.deleteAsset
+import me.m64diamondstar.db.services.*
+import me.m64diamondstar.db.updateTags
+import me.m64diamondstar.security.isAllowed
 
 @Serializable
 data class CreateAssetRequest(
@@ -34,14 +34,49 @@ data class ApproveAssetRequest(
     val approvedBy: String? = null
 )
 
+@Serializable
+data class UpdateMaterialRequest(
+    val id: Int,
+    val material: String
+)
+
+@Serializable
+data class UpdatePasteLinkRequest(
+    val id: Int,
+    val pasteLink: String
+)
+
+@Serializable
+data class UpdateTagsRequest(
+    val id: Int,
+    val tags: List<Int>
+)
+
+@Serializable
+data class DeleteAssetRequest(
+    val id: Int
+)
+
 fun Route.effectsRoutes() {
     route("/assets") {
         authenticate("auth-level-1") {
+
             get {
+                val key = call.principal<UserIdPrincipal>()!!.name
+                if (!isAllowed(key)) {
+                    call.respond(HttpStatusCode.TooManyRequests, "Rate limit exceeded")
+                    return@get
+                }
                 call.respond(getAllProvidedAssets())
             }
 
             get("/get/{id}") {
+                val key = call.principal<UserIdPrincipal>()!!.name
+                if (!isAllowed(key)) {
+                    call.respond(HttpStatusCode.TooManyRequests, "Rate limit exceeded")
+                    return@get
+                }
+
                 val id = call.parameters["id"]?.toIntOrNull()
                 if (id == null) {
                     call.respond(mapOf("error" to "Invalid ID"))
@@ -56,6 +91,12 @@ fun Route.effectsRoutes() {
             }
 
             get("/raw/{id}") {
+                val key = call.principal<UserIdPrincipal>()!!.name
+                if (!isAllowed(key)) {
+                    call.respond(HttpStatusCode.TooManyRequests, "Rate limit exceeded")
+                    return@get
+                }
+
                 val id = call.parameters["id"]?.toIntOrNull()
                 if (id == null) {
                     call.respond(mapOf("error" to "Invalid ID"))
@@ -70,6 +111,12 @@ fun Route.effectsRoutes() {
             }
 
             get("/search") {
+                val key = call.principal<UserIdPrincipal>()!!.name
+                if (!isAllowed(key)) {
+                    call.respond(HttpStatusCode.TooManyRequests, "Rate limit exceeded")
+                    return@get
+                }
+
                 val name = call.parameters["name"] ?: return@get call.respond(HttpStatusCode.BadRequest, "Missing name")
                 val limit = call.parameters["limit"]?.toIntOrNull() ?: 50
 
@@ -78,6 +125,12 @@ fun Route.effectsRoutes() {
             }
 
             get("/filter") {
+                val key = call.principal<UserIdPrincipal>()!!.name
+                if (!isAllowed(key)) {
+                    call.respond(HttpStatusCode.TooManyRequests, "Rate limit exceeded")
+                    return@get
+                }
+
                 val tagsParam = call.request.queryParameters["tags"] ?: ""
                 val tagIds = tagsParam.split(",").mapNotNull { it.trim().toIntOrNull() }.filter { it > 0 }
                 val limit = call.request.queryParameters["limit"]?.toIntOrNull()
@@ -89,6 +142,12 @@ fun Route.effectsRoutes() {
             }
 
             get("/latest") {
+                val key = call.principal<UserIdPrincipal>()!!.name
+                if (!isAllowed(key)) {
+                    call.respond(HttpStatusCode.TooManyRequests, "Rate limit exceeded")
+                    return@get
+                }
+
                 val limit = call.parameters["limit"]?.toIntOrNull() ?: 50
 
                 val results = getLatestAssets(limit)
@@ -116,9 +175,33 @@ fun Route.effectsRoutes() {
                 call.respond(result)
             }
 
+            patch("/update/material") {
+                val request = call.receive<UpdateMaterialRequest>()
+                val statusCode = updateMaterial(request.id, request.material)
+                call.respond(statusCode)
+            }
+
+            patch("/update/pastelink") {
+                val request = call.receive<UpdatePasteLinkRequest>()
+                val statusCode = updatePasteLink(request.id, request.pasteLink)
+                call.respond(statusCode)
+            }
+
+            patch("/update/tags") {
+                val request = call.receive<UpdateTagsRequest>()
+                val statusCode = updateTags(request.id, request.tags)
+                call.respond(statusCode)
+            }
+
             patch("/approve") {
                 val request = call.receive<ApproveAssetRequest>()
-                val statusCode = approveEffect(request.id, request.approvedBy)
+                val statusCode = approveAsset(request.id, request.approvedBy)
+                call.respond(statusCode)
+            }
+
+            delete("/delete") {
+                val request = call.receive<DeleteAssetRequest>()
+                val statusCode = deleteAsset(request.id)
                 call.respond(statusCode)
             }
         }

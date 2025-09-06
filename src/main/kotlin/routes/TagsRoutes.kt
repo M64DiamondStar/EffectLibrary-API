@@ -11,6 +11,7 @@ import me.m64diamondstar.db.deleteTag
 import me.m64diamondstar.db.getAllTags
 import me.m64diamondstar.db.getTagById
 import me.m64diamondstar.db.renameTag
+import me.m64diamondstar.security.isAllowed
 
 @Serializable
 data class CreateTagRequest(
@@ -32,11 +33,23 @@ fun Route.tagsRoutes() {
     route("/tags") {
         authenticate("auth-level-1") {
             get {
+                val key = call.principal<UserIdPrincipal>()!!.name
+                if (!isAllowed(key)) {
+                    call.respond(HttpStatusCode.TooManyRequests, "Rate limit exceeded")
+                    return@get
+                }
+
                 call.respond(getAllTags())
             }
 
             // Gets the name of a tag
             get("/{id}") {
+                val key = call.principal<UserIdPrincipal>()!!.name
+                if (!isAllowed(key)) {
+                    call.respond(HttpStatusCode.TooManyRequests, "Rate limit exceeded")
+                    return@get
+                }
+
                 val id = call.parameters["id"]?.toIntOrNull()
                 if (id == null) {
                     call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid ID"))
@@ -62,7 +75,7 @@ fun Route.tagsRoutes() {
             }
 
             delete {
-                val request = call.receive<DeleteTagRequest>()
+                val request = call.receive<DeleteAssetRequest>()
                 call.respond(deleteTag(request.id))
             }
 
