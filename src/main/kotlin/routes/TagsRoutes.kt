@@ -75,7 +75,7 @@ fun Route.tagsRoutes() {
             }
 
             delete {
-                val request = call.receive<DeleteAssetRequest>()
+                val request = call.receive<DeleteTagRequest>()
                 call.respond(deleteTag(request.id))
             }
 
